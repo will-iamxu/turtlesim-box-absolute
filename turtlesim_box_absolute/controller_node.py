@@ -24,9 +24,10 @@ class Controller_Node(Node):
         
         # Control parameters
         self.Kp_theta = 2.0
+        self.Kp_distance = 0.3
         
         # Direction management
-        self.direction_sequence = ['east', 'north', 'west', 'south']
+        self.direction_sequence = ['north', 'east', 'south', 'west', 'west', 'north', 'east', 'south', 'south', 'east','north','west','west','south','east','north']
         self.current_direction_index = 0
         self.moving_straight = False
         
@@ -42,9 +43,11 @@ class Controller_Node(Node):
             self.initial_x = msg.x
             self.initial_y = msg.y
             self.initial_theta = msg.theta
-            self.target_theta = self.initial_theta
+            # Set initial target_theta based on the first direction in the sequence
+            directions = {'east': 0, 'north': math.pi / 2, 'west': math.pi, 'south': -math.pi / 2}
+            self.target_theta = directions[self.direction_sequence[self.current_direction_index]]
             self.get_logger().info(f"Initial pose set to x: {self.initial_x}, y: {self.initial_y}, theta: {self.initial_theta}")
-            self.moving_straight = True  # Start moving straight after initial setup
+            self.face_direction(msg, self.direction_sequence[self.current_direction_index])  # Ensure facing the correct initial direction
 
         if self.moving_straight:
             self.move_straight(msg)
@@ -52,13 +55,23 @@ class Controller_Node(Node):
             self.face_direction(msg, self.direction_sequence[self.current_direction_index])
 
     def move_straight(self, msg):
-        if self.current_distance < self.move_distance:
-            distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
-            self.current_distance = distance_moved
-            self.command_velocity(1.0, 0.0)  # Move forward
+        # Calculate the distance moved so far
+        distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
+        self.current_distance = distance_moved
+        
+        # Calculate the remaining distance
+        remaining_distance = self.move_distance - self.current_distance
+        
+        # Check if the turtle is within a small threshold of the target position
+        if remaining_distance > self.move_threshold:
+            # Calculate the proportional velocity
+            linear_v = max(self.Kp_distance * remaining_distance, 0.1)
+            self.command_velocity(linear_v, 0.0)  # Move forward with the proportional velocity
         else:
-            self.command_velocity(0.0, 0.0)  # Stop moving
-            self.moving_straight = False  # Start turning
+            # Stop moving as the turtle is close enough to the target position
+            self.command_velocity(0.0, 0.0)
+            self.moving_straight = False  # Ready to start turning
+            # Reset distance and initial position for the next movement
             self.current_distance = 0.0
             self.initial_x = msg.x
             self.initial_y = msg.y
