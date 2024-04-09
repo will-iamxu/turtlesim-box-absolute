@@ -4,6 +4,7 @@ from geometry_msgs.msg import Twist
 from turtlesim.msg import Pose
 from turtlesim.srv import Kill
 import math
+from turtlesim.srv import SetPen
 
 class Controller_Node(Node):
     def __init__(self):
@@ -11,18 +12,24 @@ class Controller_Node(Node):
         self.get_logger().info("Controller Node Started")
         
         self.move_distance = 2.0
-        self.current_distance = 0.0
-        self.turn_threshold = 0.0000001
+        self.turn_threshold = 0.0001
         self.move_threshold = 0.1
         
         self.initial_x = None
         self.initial_y = None
         self.initial_theta = None
         
-        self.Kp_theta = 2.0
+        # Proportional gain for distance
         self.Kp_distance = 0.3
         
-        self.direction_sequence = ['north', 'east', 'south', 'west', 'west', 'north', 'east', 'south', 'south', 'east','north','west','west','south','east','north']
+        # PID coefficients for theta (orientation)
+        self.Kp_theta = 2.0
+        self.Ki_theta = 0.01  # Integral gain for theta
+        self.Kd_theta = 0.1  # Derivative gain for theta
+        self.previous_error_theta = 0.0
+        self.integral_theta = 0.0
+        
+        self.direction_sequence = ['north', 'east', 'south', 'west', 'west', 'north', 'east', 'south', 'south', 'east', 'north', 'west', 'west', 'south', 'east', 'north']
         self.current_direction_index = 0
         self.moving_straight = False
         self.pattern_completed = False
@@ -53,11 +60,12 @@ class Controller_Node(Node):
         distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
         remaining_distance = self.move_distance - distance_moved
         
-        if remaining_distance > self.move_threshold:
-            linear_v = max(self.Kp_distance * remaining_distance, 0.05)
+        linear_v = max(self.Kp_distance * remaining_distance, 0.025)  
+        
+        if remaining_distance > self.move_threshold:  
             self.command_velocity(linear_v, 0.0)
         else:
-            self.command_velocity(0.0, 0.0)
+            self.command_velocity(0.0, 0.0)  
             self.moving_straight = False
             self.initial_x = msg.x
             self.initial_y = msg.y
@@ -68,14 +76,15 @@ class Controller_Node(Node):
     def face_direction(self, msg):
         directions = {'east': 0, 'north': math.pi / 2, 'west': math.pi, 'south': -math.pi / 2}
         target_theta = directions[self.direction_sequence[self.current_direction_index]]
-        current_orientation = self.normalize_angle(msg.theta)
-        desired_orientation = self.normalize_angle(target_theta)
-        orientation_error = self.normalize_angle(desired_orientation - current_orientation)
+        error_theta = self.normalize_angle(target_theta - msg.theta)
         
-        self.get_logger().info(f"Facing {self.direction_sequence[self.current_direction_index]}, current orientation: {current_orientation}, desired orientation: {desired_orientation}, error: {orientation_error}")
-
-        if abs(orientation_error) > self.turn_threshold:
-            angular_v = max(min(self.Kp_theta * orientation_error, 1.0), -1.0)
+        self.integral_theta += error_theta
+        derivative_theta = error_theta - self.previous_error_theta
+        self.previous_error_theta = error_theta
+        
+        angular_v = self.Kp_theta * error_theta + self.Ki_theta * self.integral_theta + self.Kd_theta * derivative_theta
+        
+        if abs(error_theta) > self.turn_threshold:
             self.command_velocity(0.0, angular_v)
         else:
             self.moving_straight = True
