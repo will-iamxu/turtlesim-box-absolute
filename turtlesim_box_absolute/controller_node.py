@@ -12,7 +12,7 @@ class Controller_Node(Node):
         self.get_logger().info("Controller Node Started")
         
         self.move_distance = 2.0
-        self.turn_threshold = 0.0001
+        self.turn_threshold = 0.00001
         self.move_threshold = 0.1
         
         self.initial_x = None
@@ -20,7 +20,7 @@ class Controller_Node(Node):
         self.initial_theta = None
         
         # Proportional gain for distance
-        self.Kp_distance = 0.3
+        self.Kp_distance = 0.4
         
         # PID coefficients for theta (orientation)
         self.Kp_theta = 2.0
@@ -40,7 +40,12 @@ class Controller_Node(Node):
         while not self.kill_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
         self.get_logger().info("Subscribers and Publishers Created")
+        self.pen_client = self.create_client(SetPen, '/turtle1/set_pen')
+        while not self.pen_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Set Pen service not available, waiting again...')
 
+        self.last_pen_change_distance = 0.0 
+        
     def pose_callback(self, msg):
         if self.pattern_completed:
             return
@@ -55,20 +60,49 @@ class Controller_Node(Node):
             self.move_straight(msg)
         else:
             self.face_direction(msg)
-
+            
+    def set_pen_color(self, r, g, b, width=2, off=0):
+        """Set the pen color and width."""
+        request = SetPen.Request()
+        request.r = r
+        request.g = g
+        request.b = b
+        request.width = width
+        request.off = off
+        self.pen_client.call_async(request)
+        
     def move_straight(self, msg):
-        distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
-        remaining_distance = self.move_distance - distance_moved
-        
-        linear_v = max(self.Kp_distance * remaining_distance, 0.025)  
-        
-        if remaining_distance > self.move_threshold:  
-            self.command_velocity(linear_v, 0.0)
-        else:
-            self.command_velocity(0.0, 0.0)  
-            self.moving_straight = False
+        if self.initial_x is None or not self.moving_straight:
+            # Reset initial positions and distance tracker when starting to move straight
             self.initial_x = msg.x
             self.initial_y = msg.y
+            self.last_pen_change_distance = 0.0
+            self.moving_straight = True
+
+        distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
+        remaining_distance = self.move_distance - distance_moved
+
+        if distance_moved - self.last_pen_change_distance >= 0.1:
+            # Update the distance at the last pen color change
+            self.last_pen_change_distance = distance_moved
+
+            # Generate random color values
+            import random
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+
+            # Set the new pen color
+            self.set_pen_color(r, g, b)
+
+        linear_v = max(self.Kp_distance * remaining_distance, 0.025)
+        if remaining_distance > self.move_threshold:
+            self.command_velocity(linear_v, 0.0)
+        else:
+            self.command_velocity(0.0, 0.0)
+            self.moving_straight = False
+            self.initial_x = None  # Reset initial positions to ensure recalculation in next move
+            self.initial_y = None
             self.initial_theta = msg.theta
             self.current_direction_index += 1
             self.check_pattern_completion()
@@ -87,6 +121,7 @@ class Controller_Node(Node):
         if abs(error_theta) > self.turn_threshold:
             self.command_velocity(0.0, angular_v)
         else:
+            self.last_pen_change_distance = 0.0
             self.moving_straight = True
 
     def check_pattern_completion(self):
