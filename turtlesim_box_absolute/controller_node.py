@@ -11,9 +11,9 @@ class Controller_Node(Node):
         super().__init__('turt_controller')
         self.get_logger().info("Controller Node Started")
         
-        self.move_distance = 2.0
+        self.move_distance = 4.0
         self.turn_threshold = 0.00001
-        self.move_threshold = 0.1
+        self.move_threshold = 11/500
         
         self.initial_x = None
         self.initial_y = None
@@ -29,7 +29,7 @@ class Controller_Node(Node):
         self.previous_error_theta = 0.0
         self.integral_theta = 0.0
         
-        self.direction_sequence = ['north', 'east', 'south', 'west', 'west', 'north', 'east', 'south', 'south', 'east', 'north', 'west', 'west', 'south', 'east', 'north']
+        self.direction_sequence = ['east', 'south', 'west', 'south']
         self.current_direction_index = 0
         self.moving_straight = False
         self.pattern_completed = False
@@ -61,7 +61,7 @@ class Controller_Node(Node):
         else:
             self.face_direction(msg)
             
-    def set_pen_color(self, r, g, b, width=2, off=0):
+    def set_pen_color(self, r, g, b, width=1, off=0):
         """Set the pen color and width."""
         request = SetPen.Request()
         request.r = r
@@ -82,7 +82,7 @@ class Controller_Node(Node):
         distance_moved = math.sqrt((msg.x - self.initial_x) ** 2 + (msg.y - self.initial_y) ** 2)
         remaining_distance = self.move_distance - distance_moved
 
-        if distance_moved - self.last_pen_change_distance >= 0.1:
+        if distance_moved - self.last_pen_change_distance >= 11/500:
             # Update the distance at the last pen color change
             self.last_pen_change_distance = distance_moved
 
